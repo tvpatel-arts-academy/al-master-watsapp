@@ -4,22 +4,25 @@ const Groq = require('groq-sdk');
 
 const groq = new Groq({ apiKey: "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" });
 
-// Tumhara AL-Mastur wala number
 const phoneNumber = "917862019270"; 
 
+// 🛠️ SAFETY LOCK: Isko function ke bahar rakha hai taaki bot restart hone par bhi memory me rahe
+let isPairingCodeRequested = false;
+
 async function startBot() {
-    // 🛠️ Yahan maine folder ka naam 'almastur_fresh_session' kar diya hai taaki purana kachra bypass ho jaye
     const { state, saveCreds } = await useMultiFileAuthState('almastur_fresh_session');
 
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
         logger: pino({ level: "silent" }),
-        browser: ["Mac OS", "Chrome", "121.0.6167.159"] // WhatsApp ko lagega ki original desktop chrome chal raha hai
+        browser: ["Mac OS", "Safari", "10.15.7"] // Browser identity change karke aur stable kiya hai
     });
 
-    // Agar session naya hai, toh 4 second ka time lekar aaram se Code maangna
-    if (!sock.authState.creds.registered) {
+    // Agar code abhi tak nahi manga gaya hai, tabhi maango
+    if (!sock.authState.creds.registered && !isPairingCodeRequested) {
+        isPairingCodeRequested = true; // Lock laga diya taaki dobara na maange
+        
         setTimeout(async () => {
             try {
                 const code = await sock.requestPairingCode(phoneNumber);
@@ -29,6 +32,7 @@ async function startBot() {
                 console.log(`===============================================================\n`);
             } catch (err) {
                 console.error("❌ Pairing code error:", err?.message);
+                isPairingCodeRequested = false; // Agar code lene me fail hua, toh lock khol do taaki retry kare
             }
         }, 4000); 
     }
@@ -41,6 +45,7 @@ async function startBot() {
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) {
+                // Connection tootne par shanti se 5 second baad reconnect karega, code dobara nahi mangega
                 setTimeout(startBot, 5000); 
             }
         } else if (connection === 'open') {
@@ -54,7 +59,6 @@ async function startBot() {
 
         let text = msg.message.conversation || msg.message.extendedTextMessage?.text;
         
-        // Agar customer kisi product link/reel par click karke aaye
         if (!text && msg.message.extendedTextMessage?.contextInfo?.externalAdReply) {
             text = "Maine aapka product dekha hai, mujhe iske baare mein janna hai.";
         }
