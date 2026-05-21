@@ -4,41 +4,48 @@ const Groq = require('groq-sdk');
 // Groq API Initialize
 const groq = new Groq({ apiKey: "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" });
 
-// ⚠️ APNA WHATSAPP NUMBER YAHAN DAALO (Country code 91 ke sath, bina kisi space ya + ke)
-const MY_NUMBER = '917862019270'; 
+// APNA WHATSAPP NUMBER (Isme koi badlav mat karna agar pehle set kar diya tha)
+const MY_NUMBER = '91XXXXXXXXXX'; 
 
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: './auth_session' }),
     puppeteer: {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--single-process'
+        ]
     }
 });
 
-// QR code generate hone ke bajaye hum Pairing Code mangenge
 client.on('qr', async (qr) => {
-    console.log('===============================================================');
-    console.log('🔄 PAIRING CODE GENERATE HO RAHA HAI, 5 SECONDS RUKO...');
-    console.log('===============================================================');
-    
     try {
-        // Yeh line WhatsApp se 8-digit ka text code nikalegi
         const pairingCode = await client.requestPairingCode(MY_NUMBER);
-        console.log('\n🔥 AL-MASTUR BOT PAIRING CODE 🔥');
-        console.log(`👉 APNA CODE: ${pairingCode} 👈`);
-        console.log('\nIs code ko copy karo aur apne phone ke WhatsApp par daalo!');
+        console.log(`\n🔥 AL-MASTUR BOT PAIRING CODE: ${pairingCode} 🔥\n`);
     } catch (err) {
-        console.error('Pairing code lene mein error aaya:', err);
+        console.error('Pairing code error:', err);
     }
 });
 
 client.on('ready', () => {
-    console.log('✅ SUCCESS! AL-Mastur WhatsApp Bot is ONLINE aur LIVE hai!');
+    console.log('✅ SUCCESS! AL-Mastur WhatsApp Bot IS ONLINE AUR LIVE HAI!');
 });
 
 client.on('message', async (msg) => {
     if (msg.from.includes('@g.us')) return;
-    console.log(`📩 Customer Message: ${msg.body}`);
+
+    // Agar khali message ya sirf link (reels) aaye jisme text na ho, toh default greeting set karein
+    let incomingText = msg.body ? msg.body.trim() : "";
+    if (incomingText.startsWith('http')) {
+        incomingText = "Maine aapka reel/link dekha, mujhe is product ke baare mein janna hai.";
+    }
+    
+    if (!incomingText) return;
+
+    console.log(`📩 Customer Message: ${incomingText}`);
+
     try {
         const chatCompletion = await groq.chat.completions.create({
             messages: [
@@ -48,16 +55,20 @@ client.on('message', async (msg) => {
                 },
                 {
                     role: "user",
-                    content: msg.body
+                    content: incomingText
                 }
             ],
             model: "llama-3.1-8b-instant",
         });
+
         const reply = chatCompletion.choices[0]?.message?.content || "Maaf karna, main abhi theek se samajh nahi paaya.";
-        await msg.reply(reply);
+        
+        // 🛠️ FIX: msg.reply ke bajaye direct sendMessage use kar rahe hain jo crash-proof hai
+        await client.sendMessage(msg.from, reply);
         console.log(`📤 Bot Reply Sent: ${reply}`);
+
     } catch (error) {
-        console.error("❌ Groq API Error:", error);
+        console.error("❌ WhatsApp Sending Error:", error);
     }
 });
 
