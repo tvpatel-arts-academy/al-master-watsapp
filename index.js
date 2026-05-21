@@ -2,25 +2,34 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = requi
 const { Boom } = require('@hapi/boom');
 const Groq = require('groq-sdk');
 const pino = require('pino');
+const qrcode = require('qrcode-terminal'); // Naya tool QR code print karne ke liye
 
-// Yahan apni Groq API Key daalni hai (abhi test wali daal di hai)
+// Groq API Key Configuration
 const groq = new Groq({ apiKey: "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" }); 
 
 async function connectToWhatsApp() {
-    // Session save karne ka setup taaki baar-baar QR scan na karna pade
+    // Session status load/save karne ke liye
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true, // QR Code Terminal mein dikhega
-        logger: pino({ level: "silent" }) // Faltu logs hide karne ke liye
+        logger: pino({ level: "silent" }) // Faltu logs ko chupane ke liye
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Connection Status Check
+    // Connection Status aur QR Code Handle karne ke liye
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
+        
+        // Agar system QR code bhejta hai, toh use terminal par generate karo
+        if (qr) {
+            console.log('===============================================================');
+            console.log('👉 AL-MASTUR BOT: PHONE SE IS QR CODE KO SCAN KAREIN:');
+            console.log('===============================================================');
+            qrcode.generate(qr, { small: true }); // Yeh terminal mein chota aur perfect QR print karega
+        }
+
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Connection closed, reconnecting:', shouldReconnect);
@@ -28,24 +37,22 @@ async function connectToWhatsApp() {
                 connectToWhatsApp();
             }
         } else if (connection === 'open') {
-            console.log('✅ AL-Mastur WhatsApp Bot is ONLINE!');
+            console.log('✅ SUCCESS! AL-Mastur WhatsApp Bot is ONLINE aur LIVE hai!');
         }
     });
 
-    // Jab koi naya message aaye
+    // Incoming Messages Filter aur Response Logic
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
-        // Khud ke bheje hue message ya khali message ignore karo
         if (!msg.message || msg.key.fromMe) return;
 
         const sender = msg.key.remoteJid;
         const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
 
         if (text) {
-            console.log(`📩 Naya Message: ${text}`);
+            console.log(`📩 Customer Message: ${text}`);
 
             try {
-                // Groq Llama 3.1 AI se answer mangna
                 const chatCompletion = await groq.chat.completions.create({
                     messages: [
                         {
@@ -62,16 +69,15 @@ async function connectToWhatsApp() {
 
                 const reply = chatCompletion.choices[0]?.message?.content || "Maaf karna, main abhi theek se samajh nahi paaya.";
                 
-                // AI ka reply WhatsApp par bhejna
                 await sock.sendMessage(sender, { text: reply });
-                console.log(`📤 Bheja gaya Reply: ${reply}`);
+                console.log(`📤 Bot Reply Sent: ${reply}`);
 
             } catch (error) {
-                console.error("❌ API Error:", error);
+                console.error("❌ Groq API Error:", error);
             }
         }
     });
 }
 
-// Bot ko Start Karo
+// Bot Execution Start
 connectToWhatsApp();
