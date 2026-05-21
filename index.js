@@ -4,7 +4,7 @@ const Groq = require('groq-sdk');
 
 const groq = new Groq({ apiKey: "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" });
 
-// ⚠️ APNA WHATSAPP NUMBER YAHAN DAALEIN (Bina + ke, jaise 919876543210)
+// Maine tumhara AL-Mastur wala number yahan daal diya hai
 const phoneNumber = "917862019270"; 
 
 async function startBot() {
@@ -12,35 +12,37 @@ async function startBot() {
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false, // QR code bilkul band kar diya
+        printQRInTerminal: false, // QR Code disable
         logger: pino({ level: "silent" }),
-        browser: ["Ubuntu", "Chrome", "20.0.04"] // Pairing code ke liye yeh zaroori hai
+        browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
-
-    // Sirf ek baar pairing code generate karne ka logic (3 seconds delay ke sath taaki crash na ho)
-    if (!sock.authState.creds.registered) {
-        setTimeout(async () => {
-            try {
-                const code = await sock.requestPairingCode(phoneNumber);
-                console.log(`\n==========================================`);
-                console.log(`🔥 AAPKA PAIRING CODE HAI: ${code} 🔥`);
-                console.log(`👉 Apne phone ke WhatsApp > Linked Devices > Link with phone number me daalein.`);
-                console.log(`==========================================\n`);
-            } catch (err) {
-                console.error("Pairing code error:", err);
-            }
-        }, 3000); 
-    }
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
+    let pairingCodeRequested = false;
+
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
         
+        // JAB SERVER SAHI SE READY HO JAYE (qr signal de), TABHI CODE MAANGO
+        if (qr && !pairingCodeRequested) {
+            pairingCodeRequested = true;
+            try {
+                const code = await sock.requestPairingCode(phoneNumber);
+                console.log(`\n===============================================================`);
+                console.log(`🔥 AAPKA PAIRING CODE HAI: ${code} 🔥`);
+                console.log(`👉 WhatsApp > Linked Devices > Link with phone number me daalein.`);
+                console.log(`===============================================================\n`);
+            } catch (err) {
+                console.error("❌ Pairing code error:", err?.message);
+            }
+        }
+
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+            // Agar connection close ho toh 5 second wait karke reconnect karega taaki loop na bane
             if (shouldReconnect) {
-                setTimeout(startBot, 2000);
+                setTimeout(startBot, 5000); 
             }
         } else if (connection === 'open') {
             console.log('✅ SUCCESS! AL-Mastur Bot ONLINE aur LIVE hai!');
@@ -51,7 +53,13 @@ async function startBot() {
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return;
 
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+        let text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+        
+        // Agar customer sirf link bhej de toh
+        if (!text && msg.message.extendedTextMessage?.contextInfo?.externalAdReply) {
+            text = "Maine aapka product/link dekha hai, mujhe iske baare mein janna hai.";
+        }
+        
         if (!text) return;
 
         console.log(`📩 Customer: ${text}`);
