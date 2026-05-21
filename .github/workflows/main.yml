@@ -3,7 +3,7 @@ name: JavaGoat-WhatsApp-Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */5 * * *' # Har 5 ghante mein bot ko automatic restart karega
+    - cron: '0 */5 * * *'
 
 jobs:
   build:
@@ -18,8 +18,8 @@ jobs:
       with:
         node-version: "20"
 
-    - name: Install Dependencies
-      run: npm install
-
-    - name: Start AI Bot
-      run: npm start
+    - name: Force Install and Start Bot
+      run: |
+        npm install --no-audit --no-fund
+        npm install @whiskeysockets/baileys --no-audit --no-fund
+        node index.js
