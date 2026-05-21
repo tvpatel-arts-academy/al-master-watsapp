@@ -1,4 +1,4 @@
-name: JavaGoat-WhatsApp-Bot
+name: AL-Mastur WhatsApp Bot
 
 on:
   workflow_dispatch:
@@ -18,8 +18,5 @@ jobs:
       with:
         node-version: "20"
 
-    - name: Force Install and Start Bot
-      run: |
-        npm install --no-audit --no-fund
-        npm install @whiskeysockets/baileys --no-audit --no-fund
-        node index.js
+    - name: Start AI Bot
+      run: npm start
