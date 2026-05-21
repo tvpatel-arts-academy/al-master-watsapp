@@ -1,4 +1,4 @@
-const { Client, LocalAuth } = require('wwebjs-fix');
+const { Client, LocalAuth } = require('whatsapp-web.js');
 const Groq = require('groq-sdk');
 
 // Groq API Initialize
