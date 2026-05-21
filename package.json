@@ -1,13 +1,13 @@
 {
   "name": "almastur-whatsapp-bot",
   "version": "1.0.0",
-  "description": "AL-Mastur AI WhatsApp Bot using wwebjs-fix and Groq",
+  "description": "AL-Mastur AI WhatsApp Bot using official edge version",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "wwebjs-fix": "^1.26.1-fix.3",
+    "whatsapp-web.js": "github:pedroslopez/whatsapp-web.js",
     "qrcode-terminal": "^0.12.0",
     "groq-sdk": "^0.3.3"
   }
