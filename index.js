@@ -6,46 +6,49 @@ const groq = new Groq({ apiKey: "gsk_IbWWciyaQhbgZ6kC18TEWGdyb3FYbxtpkDN6mmOcSwR
 
 const phoneNumber = "917862019270"; 
 
-// 🛠️ SAFETY LOCK: Isko function ke bahar rakha hai taaki bot restart hone par bhi memory me rahe
-let isPairingCodeRequested = false;
+// Global lock
+let pairingCodeRequested = false;
 
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('almastur_fresh_session');
+    // 🧹 NAYA FOLDER: Purana session kachra avoid karne ke liye
+    const { state, saveCreds } = await useMultiFileAuthState('session_almastur_final');
 
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
         logger: pino({ level: "silent" }),
-        browser: ["Mac OS", "Safari", "10.15.7"] // Browser identity change karke aur stable kiya hai
+        browser: ["Mac OS", "Chrome", "121.0.6167.159"]
     });
-
-    // Agar code abhi tak nahi manga gaya hai, tabhi maango
-    if (!sock.authState.creds.registered && !isPairingCodeRequested) {
-        isPairingCodeRequested = true; // Lock laga diya taaki dobara na maange
-        
-        setTimeout(async () => {
-            try {
-                const code = await sock.requestPairingCode(phoneNumber);
-                console.log(`\n===============================================================`);
-                console.log(`🔥 AAPKA PAIRING CODE HAI: ${code} 🔥`);
-                console.log(`👉 WhatsApp > Linked Devices > Link with phone number me daalein.`);
-                console.log(`===============================================================\n`);
-            } catch (err) {
-                console.error("❌ Pairing code error:", err?.message);
-                isPairingCodeRequested = false; // Agar code lene me fail hua, toh lock khol do taaki retry kare
-            }
-        }, 4000); 
-    }
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
+    // 🎯 SMART TRIGGER LOGIC
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
         
+        // Jab WhatsApp sach mein login ke liye ready ho (qr signal de), TABHI code mango
+        if (qr && !pairingCodeRequested) {
+            pairingCodeRequested = true;
+            console.log("\n⏳ WhatsApp server ready hai! Pairing Code generate ho raha hai, 3 second ruko...");
+            
+            // Connection ko thoda saans lene ke liye 3 second ka wait
+            setTimeout(async () => {
+                try {
+                    const code = await sock.requestPairingCode(phoneNumber);
+                    console.log(`\n===============================================================`);
+                    console.log(`🔥 AAPKA PAIRING CODE HAI: ${code} 🔥`);
+                    console.log(`👉 WhatsApp > Linked Devices > Link with phone number me daalein.`);
+                    console.log(`===============================================================\n`);
+                } catch (err) {
+                    console.error("❌ Pairing code fail hua:", err?.message);
+                    pairingCodeRequested = false; // Fail hone par lock khol do
+                }
+            }, 3000); 
+        }
+
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) {
-                // Connection tootne par shanti se 5 second baad reconnect karega, code dobara nahi mangega
                 setTimeout(startBot, 5000); 
             }
         } else if (connection === 'open') {
@@ -53,6 +56,7 @@ async function startBot() {
         }
     });
 
+    // 📩 MESSAGE HANDLING
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return;
