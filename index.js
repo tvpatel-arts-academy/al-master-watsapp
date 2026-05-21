@@ -5,7 +5,7 @@ const Groq = require('groq-sdk');
 const groq = new Groq({ apiKey: "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" });
 
 // APNA WHATSAPP NUMBER (Isme koi badlav mat karna agar pehle set kar diya tha)
-const MY_NUMBER = '91XXXXXXXXXX'; 
+const MY_NUMBER = '917862019270'; 
 
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: './auth_session' }),
