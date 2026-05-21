@@ -1,75 +1,51 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const Groq = require('groq-sdk');
+const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const pino = require('pino');
+const readline = require('readline');
 
-// Groq API Initialize
-const groq = new Groq({ apiKey: "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" });
-
-// APNA WHATSAPP NUMBER (Isme koi badlav mat karna agar pehle set kar diya tha)
-const MY_NUMBER = '917862019270'; 
-
-const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: './auth_session' }),
-    puppeteer: {
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--single-process'
-        ]
-    }
+// Console me phone number type karne ke liye readline setup
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
 });
+const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
-client.on('qr', async (qr) => {
-    try {
-        const pairingCode = await client.requestPairingCode(MY_NUMBER);
-        console.log(`\n🔥 AL-MASTUR BOT PAIRING CODE: ${pairingCode} 🔥\n`);
-    } catch (err) {
-        console.error('Pairing code error:', err);
-    }
-});
+async function startWhatsApp() {
+    // Auth state manage karne ke liye
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
-client.on('ready', () => {
-    console.log('✅ SUCCESS! AL-Mastur WhatsApp Bot IS ONLINE AUR LIVE HAI!');
-});
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: false, // QR Code display band kar diya
+        logger: pino({ level: 'silent' }), // Extra logs hide karne ke liye
+        browser: ['Chrome (Linux)', '', ''] // Pairing code use karne ke liye browser set karna zaroori hai
+    });
 
-client.on('message', async (msg) => {
-    if (msg.from.includes('@g.us')) return;
-
-    // Agar khali message ya sirf link (reels) aaye jisme text na ho, toh default greeting set karein
-    let incomingText = msg.body ? msg.body.trim() : "";
-    if (incomingText.startsWith('http')) {
-        incomingText = "Maine aapka reel/link dekha, mujhe is product ke baare mein janna hai.";
-    }
-    
-    if (!incomingText) return;
-
-    console.log(`📩 Customer Message: ${incomingText}`);
-
-    try {
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [
-                {
-                    role: "system",
-                    content: "You are a highly polite and professional customer support assistant for 'AL-Mastur', a premium modest fashion brand selling Burqas, Naqabs, and Rumalis in India. Talk nicely in Hinglish. Keep answers short, crisp, and helpful. Always offer Cash on Delivery (COD)."
-                },
-                {
-                    role: "user",
-                    content: incomingText
-                }
-            ],
-            model: "llama-3.1-8b-instant",
-        });
-
-        const reply = chatCompletion.choices[0]?.message?.content || "Maaf karna, main abhi theek se samajh nahi paaya.";
+    // Agar session pehle se nahi bana hai, toh pairing code maangega
+    if (!sock.authState.creds.registered) {
+        // Country code ke saath number daalna zaroori hai (e.g., 919876543270)
+        const phoneNumber = await question('Apna WhatsApp number enter karo (with country code): ');
         
-        // 🛠️ FIX: msg.reply ke bajaye direct sendMessage use kar rahe hain jo crash-proof hai
-        await client.sendMessage(msg.from, reply);
-        console.log(`📤 Bot Reply Sent: ${reply}`);
-
-    } catch (error) {
-        console.error("❌ WhatsApp Sending Error:", error);
+        // WhatsApp se pairing code request karo
+        const code = await sock.requestPairingCode(phoneNumber);
+        console.log(`\n========================================`);
+        console.log(`Bhai, tera Pairing Code ye hai: ${code}`);
+        console.log(`========================================\n`);
+        console.log(`WhatsApp me 'Linked Devices' -> 'Link with phone number' me jaake ye code daal.`);
     }
-});
 
-client.initialize();
+    // Credentials save karte rehna jab bhi update ho
+    sock.ev.on('creds.update', saveCreds);
+
+    // Connection status monitor karna
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
+        if (connection === 'close') {
+            console.log('Connection close ho gaya, wapas connect kar raha hoon...');
+            startWhatsApp(); // Reconnect
+        } else if (connection === 'open') {
+            console.log('WhatsApp successfully connect ho gaya!');
+        }
+    });
+}
+
+startWhatsApp();
