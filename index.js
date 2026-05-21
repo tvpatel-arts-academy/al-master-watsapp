@@ -1,83 +1,76 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
-const { Boom } = require('@hapi/boom');
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
 const Groq = require('groq-sdk');
-const pino = require('pino');
-const qrcode = require('qrcode-terminal'); // Naya tool QR code print karne ke liye
 
-// Groq API Key Configuration
-const groq = new Groq({ apiKey: "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" }); 
+// Groq API Initialize
+const groq = new Groq({ apiKey: "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" });
 
-async function connectToWhatsApp() {
-    // Session status load/save karne ke liye
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
-    
-    const sock = makeWASocket({
-        auth: state,
-        logger: pino({ level: "silent" }) // Faltu logs ko chupane ke liye
-    });
+// Client Configuration for Cloud/GitHub Environment
+const client = new Client({
+    authStrategy: new LocalAuth({ dataPath: './auth_session' }),
+    puppeteer: {
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process',
+            '--disable-gpu'
+        ]
+    }
+});
 
-    sock.ev.on('creds.update', saveCreds);
+// Jab QR Code Generate ho
+client.on('qr', (qr) => {
+    console.log('===============================================================');
+    console.log('👉 AL-MASTUR BOT: PHONE SE IS QR CODE KO SCAN KAREIN:');
+    console.log('===============================================================');
+    qrcode.generate(qr, { small: true });
+});
 
-    // Connection Status aur QR Code Handle karne ke liye
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
+// Successful Auth aur Ready State
+client.on('ready', () => {
+    console.log('✅ SUCCESS! AL-Mastur WhatsApp Bot is ONLINE aur LIVE hai!');
+});
+
+client.on('auth_failure', (msg) => {
+    console.error('❌ Auth failure, restarting session...', msg);
+});
+
+// Incoming Message Trigger
+client.on('message', async (msg) => {
+    // Sirf individual chats handle karne ke liye (groups ko ignore karega)
+    if (msg.from.includes('@g.us')) return;
+
+    console.log(`📩 Customer Message: ${msg.body}`);
+
+    try {
+        const chatCompletion = await groq.chat.completions.create({
+            messages: [
+                {
+                    role: "system",
+                    content: "You are a highly polite and professional customer support assistant for 'AL-Mastur', a premium modest fashion brand selling Burqas, Naqabs, and Rumalis in India. Talk nicely in Hinglish (Hindi written in English alphabet). Keep answers short, crisp, and helpful. Always offer Cash on Delivery (COD)."
+                },
+                {
+                    role: "user",
+                    content: msg.body
+                }
+            ],
+            model: "llama-3.1-8b-instant",
+        });
+
+        const reply = chatCompletion.choices[0]?.message?.content || "Maaf karna, main abhi theek se samajh nahi paaya.";
         
-        // Agar system QR code bhejta hai, toh use terminal par generate karo
-        if (qr) {
-            console.log('===============================================================');
-            console.log('👉 AL-MASTUR BOT: PHONE SE IS QR CODE KO SCAN KAREIN:');
-            console.log('===============================================================');
-            qrcode.generate(qr, { small: true }); // Yeh terminal mein chota aur perfect QR print karega
-        }
+        await msg.reply(reply);
+        console.log(`📤 Bot Reply Sent: ${reply}`);
 
-        if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed, reconnecting:', shouldReconnect);
-            if (shouldReconnect) {
-                connectToWhatsApp();
-            }
-        } else if (connection === 'open') {
-            console.log('✅ SUCCESS! AL-Mastur WhatsApp Bot is ONLINE aur LIVE hai!');
-        }
-    });
+    } catch (error) {
+        console.error("❌ Groq API Error:", error);
+    }
+});
 
-    // Incoming Messages Filter aur Response Logic
-    sock.ev.on('messages.upsert', async (m) => {
-        const msg = m.messages[0];
-        if (!msg.message || msg.key.fromMe) return;
-
-        const sender = msg.key.remoteJid;
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
-
-        if (text) {
-            console.log(`📩 Customer Message: ${text}`);
-
-            try {
-                const chatCompletion = await groq.chat.completions.create({
-                    messages: [
-                        {
-                            role: "system",
-                            content: "You are a highly polite and professional customer support assistant for 'AL-Mastur', a premium modest fashion brand selling Burqas, Naqabs, and Rumalis in India. Talk nicely in Hinglish (Hindi written in English alphabet). Keep answers short and helpful. Always offer Cash on Delivery (COD)."
-                        },
-                        {
-                            role: "user",
-                            content: text
-                        }
-                    ],
-                    model: "llama-3.1-8b-instant",
-                });
-
-                const reply = chatCompletion.choices[0]?.message?.content || "Maaf karna, main abhi theek se samajh nahi paaya.";
-                
-                await sock.sendMessage(sender, { text: reply });
-                console.log(`📤 Bot Reply Sent: ${reply}`);
-
-            } catch (error) {
-                console.error("❌ Groq API Error:", error);
-            }
-        }
-    });
-}
-
-// Bot Execution Start
-connectToWhatsApp();
+// Initialize Client
+client.initialize();
