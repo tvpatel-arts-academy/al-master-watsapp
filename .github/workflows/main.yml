@@ -3,7 +3,7 @@ name: JavaGoat-WhatsApp-Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */5 * * *' # Yeh har 5 ghante mein bot ko automatic restart karega
+    - cron: '0 */5 * * *' # Har 5 ghante mein bot ko automatic restart karega
 
 jobs:
   build:
