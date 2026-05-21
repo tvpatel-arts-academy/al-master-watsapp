@@ -4,29 +4,23 @@ const Groq = require('groq-sdk');
 
 const groq = new Groq({ apiKey: "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" });
 
-// Maine tumhara AL-Mastur wala number yahan daal diya hai
+// Tumhara AL-Mastur wala number
 const phoneNumber = "917862019270"; 
 
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_session');
+    // 🛠️ Yahan maine folder ka naam 'almastur_fresh_session' kar diya hai taaki purana kachra bypass ho jaye
+    const { state, saveCreds } = await useMultiFileAuthState('almastur_fresh_session');
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false, // QR Code disable
+        printQRInTerminal: false,
         logger: pino({ level: "silent" }),
-        browser: ["Ubuntu", "Chrome", "20.0.04"]
+        browser: ["Mac OS", "Chrome", "121.0.6167.159"] // WhatsApp ko lagega ki original desktop chrome chal raha hai
     });
 
-    sock.ev.on('creds.update', saveCreds);
-
-    let pairingCodeRequested = false;
-
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        // JAB SERVER SAHI SE READY HO JAYE (qr signal de), TABHI CODE MAANGO
-        if (qr && !pairingCodeRequested) {
-            pairingCodeRequested = true;
+    // Agar session naya hai, toh 4 second ka time lekar aaram se Code maangna
+    if (!sock.authState.creds.registered) {
+        setTimeout(async () => {
             try {
                 const code = await sock.requestPairingCode(phoneNumber);
                 console.log(`\n===============================================================`);
@@ -36,11 +30,16 @@ async function startBot() {
             } catch (err) {
                 console.error("❌ Pairing code error:", err?.message);
             }
-        }
+        }, 4000); 
+    }
 
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
+        
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            // Agar connection close ho toh 5 second wait karke reconnect karega taaki loop na bane
             if (shouldReconnect) {
                 setTimeout(startBot, 5000); 
             }
@@ -55,9 +54,9 @@ async function startBot() {
 
         let text = msg.message.conversation || msg.message.extendedTextMessage?.text;
         
-        // Agar customer sirf link bhej de toh
+        // Agar customer kisi product link/reel par click karke aaye
         if (!text && msg.message.extendedTextMessage?.contextInfo?.externalAdReply) {
-            text = "Maine aapka product/link dekha hai, mujhe iske baare mein janna hai.";
+            text = "Maine aapka product dekha hai, mujhe iske baare mein janna hai.";
         }
         
         if (!text) return;
